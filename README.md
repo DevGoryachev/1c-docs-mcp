@@ -1,6 +1,12 @@
 # 1c-docs-mcp
 
-Локальный read-only MCP-сервер документации 1С на TypeScript/Node.js.
+Локальный MCP-сервер документации 1С для Codex Desktop.
+
+## Назначение
+
+Сервер предоставляет доступ к внутренней базе знаний по 1С через MCP tools.
+
+Первая версия сервера предназначена для локальной работы в Codex Desktop и поддерживает только read-only сценарий.
 
 ## Что входит в v1
 
@@ -11,6 +17,12 @@
   - `list_topics()`
 - источник: `data/normalized/*.json`
 - индекс: SQLite + FTS5
+
+Сервер поддерживает 3 инструмента:
+
+- `list_topics` — вернуть список тем и количество документов по каждой теме
+- `search` — выполнить поиск по базе знаний
+- `fetch` — вернуть полный документ по `id`
 
 ## Требования
 
@@ -69,17 +81,14 @@ npm start
   "items": [
     {
       "id": "json.readwrite.001",
-      "topic": "json",
       "title": "Работа с JSON в 1С: чтение и запись",
-      "snippet": " ... ",
-      "score": -3.21
+      "source": "Хрусталева. Технологии интеграции 1С",
+      "topic": "json",
+      "snippet": " ... "
     }
   ]
 }
 ```
-
-Примечание:
-- `score` — результат `bm25` из SQLite FTS5 (меньше = релевантнее).
 
 ### `fetch(id)`
 
@@ -90,8 +99,9 @@ npm start
 
 ```json
 {
+  "id": "json.readwrite.001",
   "found": true,
-  "doc": {
+  "item": {
     "id": "json.readwrite.001",
     "title": "Работа с JSON в 1С: чтение и запись",
     "topic": "json",
@@ -110,7 +120,8 @@ npm start
 ```json
 {
   "id": "unknown.id",
-  "found": false
+  "found": false,
+  "item": null
 }
 ```
 
@@ -135,3 +146,38 @@ npm start
 
 - Сервер работает только на чтение (`query_only` + `readonly` соединение к БД).
 - Запись в SQLite выполняется только индексатором (`npm run build-index`).
+
+## Ограничения v1
+
+- только локальный запуск
+- только STDIO transport
+- только read-only
+- без remote HTTP
+- без OAuth
+- без embeddings
+- без resources
+- без prompts
+
+## Структура проекта
+
+```text
+1c-docs-mcp/
+  data/
+    normalized/        # нормализованные документы в JSON
+    sqlite/            # локальная SQLite база / индекс
+  scripts/
+    smoke.ps1          # smoke test
+  src/
+    config.ts          # конфигурация проекта
+    main.ts            # точка входа
+    db/                # работа с SQLite
+    indexer/           # построение индекса
+    mcp/               # MCP server и tools
+    types/             # типы TypeScript
+  MCP_SETUP.md         # параметры подключения в Codex
+  TOOLS_V1.md          # список tools v1
+  TOOLS_CONTRACTS.md   # контракт ответов tools
+  V1_STATUS.md         # статус рабочей версии
+  SMOKE_TEST_V1.md     # smoke test
+
+
