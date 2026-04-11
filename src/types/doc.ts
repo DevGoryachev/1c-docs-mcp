@@ -13,10 +13,27 @@ export interface SearchResult {
   topic: string;
   title: string;
   snippet: string;
-  score: number;
+  extraJson?: string;
+}
+
+export interface SearchItem {
+  id: string;
+  title: string;
+  source: string;
+  topic: string;
+  snippet: string;
 }
 
 export interface FetchResult extends NormalizedDoc {}
+
+export interface FetchItem extends Record<string, unknown> {
+  id: string;
+  topic: string;
+  title: string;
+  text: string;
+  source_path: string | null;
+  updated_at: string | null;
+}
 
 export interface TopicRow {
   topic: string;

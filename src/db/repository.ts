@@ -47,12 +47,12 @@ export class DocsRepository {
           d.topic AS topic,
           d.title AS title,
           snippet(docs_fts, 3, '[', ']', ' … ', 20) AS snippet,
-          bm25(docs_fts) AS score
+          d.extra_json AS extraJson
         FROM docs_fts
         JOIN docs d ON d.id = docs_fts.id
         WHERE docs_fts MATCH ?
           AND d.topic = ?
-        ORDER BY score
+        ORDER BY bm25(docs_fts)
         LIMIT ?
       `);
       return stmt.all(ftsQuery, topic.trim(), safeLimit) as SearchResult[];
@@ -64,11 +64,11 @@ export class DocsRepository {
         d.topic AS topic,
         d.title AS title,
         snippet(docs_fts, 3, '[', ']', ' … ', 20) AS snippet,
-        bm25(docs_fts) AS score
+        d.extra_json AS extraJson
       FROM docs_fts
       JOIN docs d ON d.id = docs_fts.id
       WHERE docs_fts MATCH ?
-      ORDER BY score
+      ORDER BY bm25(docs_fts)
       LIMIT ?
     `);
 

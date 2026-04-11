@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DocsRepository } from "../../db/repository.js";
 import { config } from "../../config.js";
+import type { SearchItem } from "../../types/doc.js";
 
 export const searchToolSchema = {
   query: z.string().min(1).describe("Поисковый запрос"),
@@ -17,6 +18,14 @@ type SearchToolArgs = {
 export async function handleSearch(repository: DocsRepository, args: SearchToolArgs) {
   const safeTopK = Math.min(Math.max(args.top_k ?? config.defaultSearchLimit, 1), config.maxSearchLimit);
   const rows = repository.search(args.query, args.topic, safeTopK);
+  const items: SearchItem[] = rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    source: parseSource(row.extraJson),
+    topic: row.topic,
+    snippet: row.snippet
+  }));
+
   return {
     content: [
       {
@@ -26,8 +35,8 @@ export async function handleSearch(repository: DocsRepository, args: SearchToolA
             query: args.query,
             topic: args.topic ?? null,
             top_k: safeTopK,
-            total: rows.length,
-            items: rows
+            total: items.length,
+            items
           },
           null,
           2
@@ -35,4 +44,20 @@ export async function handleSearch(repository: DocsRepository, args: SearchToolA
       }
     ]
   };
+}
+
+function parseSource(extraJson?: string): string {
+  if (!extraJson) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(extraJson) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return "";
+    }
+    const source = (parsed as Record<string, unknown>).source;
+    return typeof source === "string" ? source : "";
+  } catch {
+    return "";
+  }
 }
