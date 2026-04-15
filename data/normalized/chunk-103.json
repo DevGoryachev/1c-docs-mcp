@@ -1,0 +1,14 @@
+{
+  "id": "integration_antipatterns.external_format_everywhere.103",
+  "title": "Анти-паттерн: размазывать формат внешней системы по всему прикладному коду",
+  "source": "Internal normalized rule based on integration practices",
+  "topic": "integration_antipatterns",
+  "tags": [
+    "integration",
+    "normalization",
+    "architecture",
+    "antipattern"
+  ],
+  "text": "Если особенности внешнего API, имена его полей и странные значения обрабатываются во многих местах прикладного кода, система быстро становится хрупкой. Нормализовать внешний контракт нужно на границе интеграции, а внутренняя модель должна оставаться стабильной и понятной.",
+  "priority": 1
+}

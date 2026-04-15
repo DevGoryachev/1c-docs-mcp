@@ -14,6 +14,8 @@ export interface SearchResult {
   title: string;
   snippet: string;
   extraJson?: string;
+  content?: string;
+  score?: number;
 }
 
 export interface SearchItem {
@@ -38,4 +40,10 @@ export interface FetchItem extends Record<string, unknown> {
 export interface TopicRow {
   topic: string;
   docsCount: number;
+}
+
+export interface TopicResourceItemRow {
+  id: string;
+  title: string;
+  priority?: number;
 }

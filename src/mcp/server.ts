@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { config } from "../config.js";
 import { openReadonlyDb } from "../db/connection.js";
 import { DocsRepository } from "../db/repository.js";
+import { registerKnowledgePrompts } from "./prompts/knowledge-prompts.js";
+import { registerTopicResources } from "./resources/topics.js";
 import { fetchToolSchema, handleFetch } from "./tools/fetch.js";
 import { listTopicsToolSchema, handleListTopics } from "./tools/list-topics.js";
 import { handleSearch, searchToolSchema } from "./tools/search.js";
@@ -36,6 +38,9 @@ export async function startMcpServer(): Promise<void> {
     listTopicsToolSchema,
     async (args) => runSafe(() => handleListTopics(repository, args))
   );
+
+  registerTopicResources(server, repository);
+  registerKnowledgePrompts(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

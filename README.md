@@ -24,6 +24,53 @@
 - `search` — выполнить поиск по базе знаний
 - `fetch` — вернуть полный документ по `id`
 
+Также сервер публикует стабильные resources по темам (показываются только если topic присутствует в корпусе):
+- `1c://docs/json`
+- `1c://docs/http_services`
+- `1c://docs/client_server`
+- `1c://docs/skd`
+- `1c://docs/queries`
+- `1c://docs/interface`
+- `1c://docs/team_rules`
+- `1c://docs/exchange`
+- `1c://docs/dev_rules`
+- `1c://docs/interface_rules`
+- `1c://docs/client_server_rules`
+- `1c://docs/client_server_antipatterns`
+- `1c://docs/form_patterns`
+- `1c://docs/http_api_rules`
+- `1c://docs/http_api_antipatterns`
+- `1c://docs/integration_patterns`
+- `1c://docs/integration_antipatterns`
+- `1c://docs/exchange_antipatterns`
+- `1c://docs/query_patterns`
+- `1c://docs/query_antipatterns`
+- `1c://docs/skd_core`
+- `1c://docs/skd_antipatterns`
+- `1c://docs/json_patterns`
+- `1c://docs/infostart_practices`
+
+И поддерживает prompts:
+- `review_1c_code_against_standards` — ревью кода 1С по стандартам.
+- `design_http_service_1c` — проектирование HTTP-сервиса 1С.
+- `suggest_skd_approach` — подход к отчету через СКД.
+- `check_client_server_boundary` — проверка границы клиент/сервер.
+- `optimize_1c_query` — ревью и оптимизация запроса 1С.
+- `integration_error_contract` — единый контракт ошибок интеграции.
+- `review_1c_form_code` — ревью кода формы 1С.
+- `review_http_api_contract_1c` — ревью HTTP API контракта.
+- `review_skd_design` — ревью архитектуры СКД.
+- `review_query_1c` — ревью запроса 1С с anti-pattern проверками.
+- `explain_1c_antipattern` — объяснение anti-pattern и альтернатива.
+- `design_integration_contract_1c` — проектирование контракта интеграции.
+
+Поиск `search` в текущей версии:
+- нормализует запрос (`trim`, lowercase, схлопывание пробелов, замена тире/дефисов на пробел, удаление лишней пунктуации);
+- ищет по `title`, `tags`, `topic`, `text`;
+- ранжирует выше совпадения в `title/tags/topic`, чем в основном тексте;
+- учитывает `priority` как дополнительный вес;
+- формирует snippet вокруг релевантного совпадения.
+
 ## Требования
 
 - Node.js 20+
@@ -155,8 +202,7 @@ npm start
 - без remote HTTP
 - без OAuth
 - без embeddings
-- без resources
-- без prompts
+- без автоматического выполнения LLM внутри MCP-сервера
 
 ## Структура проекта
 
@@ -179,5 +225,3 @@ npm start
   TOOLS_CONTRACTS.md   # контракт ответов tools
   V1_STATUS.md         # статус рабочей версии
   SMOKE_TEST_V1.md     # smoke test
-
-
