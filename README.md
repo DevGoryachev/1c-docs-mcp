@@ -6,11 +6,11 @@
 
 Сервер предоставляет доступ к внутренней базе знаний по 1С через MCP tools.
 
-Первая версия сервера предназначена для локальной работы в Codex Desktop и поддерживает только read-only сценарий.
+Первая версия сервера предназначена для локальной работы в Codex Desktop и поддерживает read-only сценарий.
 
 ## Что входит в v1
 
-- transport: STDIO
+- transport: STDIO + Streamable HTTP
 - инструменты:
   - `search(query, topic?, top_k?)`
   - `fetch(id)`
@@ -18,11 +18,23 @@
 - источник: `data/normalized/*.json`
 - индекс: SQLite + FTS5
 
-Сервер поддерживает 3 инструмента:
+Сервер поддерживает 4 инструмента:
 
 - `list_topics` — вернуть список тем и количество документов по каждой теме
 - `search` — выполнить поиск по базе знаний
 - `fetch` — вернуть полный документ по `id`
+- `run_regression_queries` — прогнать фиксированный набор регрессионных запросов
+
+Meta-resources:
+- `1c://meta/server`
+- `1c://meta/corpus`
+- `1c://meta/topics`
+
+Resource templates:
+- `1c://docs/topic/{topic}`
+- `1c://chunks/{id}`
+- `1c://playbooks/{name}`
+- `1c://standards/{area}`
 
 Также сервер публикует стабильные resources по темам (показываются только если topic присутствует в корпусе):
 - `1c://docs/json`
@@ -99,6 +111,13 @@ npm run build
 npm start
 ```
 
+Запуск по transport:
+
+```bash
+npm run start:stdio
+npm run start:http
+```
+
 ## Конфигурация окружения
 
 См. `.env.example`:
@@ -107,6 +126,9 @@ npm start
 - `MCP_DATA_DIR` — директория с JSON-документами.
 - `MCP_DEFAULT_SEARCH_LIMIT` — лимит `search` по умолчанию.
 - `MCP_MAX_SEARCH_LIMIT` — максимальный лимит `search`.
+- `MCP_HTTP_HOST` — host для HTTP transport (по умолчанию `127.0.0.1`).
+- `MCP_HTTP_PORT` — port для HTTP transport (по умолчанию `3000`).
+- `MCP_HTTP_ENDPOINT` — MCP endpoint для HTTP transport (по умолчанию `/mcp`).
 
 ## Контракты инструментов v1
 
@@ -189,6 +211,45 @@ npm start
 }
 ```
 
+### `run_regression_queries(top_k?)`
+
+Вход:
+- `top_k?: number` — лимит результатов на каждый регрессионный запрос.
+
+Выход:
+
+```json
+{
+  "total_queries": 6,
+  "passed": 6,
+  "failed": 0,
+  "items": [
+    {
+      "name": "http_error_contract",
+      "query": "как правильно отдавать ошибку из HTTP-сервиса 1С",
+      "topic": "http_api_rules",
+      "top_k": 3,
+      "total": 3,
+      "top_ids": ["..."],
+      "ok": true
+    }
+  ]
+}
+```
+
+## Единый стиль ошибок
+
+Во всех новых/обновленных местах используется единый формат:
+
+```json
+{
+  "error": {
+    "type": "invalid input | not found | internal error",
+    "message": "..."
+  }
+}
+```
+
 ## Важно
 
 - Сервер работает только на чтение (`query_only` + `readonly` соединение к БД).
@@ -196,10 +257,9 @@ npm start
 
 ## Ограничения v1
 
-- только локальный запуск
-- только STDIO transport
+- локальный запуск
+- dual transport: STDIO и Streamable HTTP
 - только read-only
-- без remote HTTP
 - без OAuth
 - без embeddings
 - без автоматического выполнения LLM внутри MCP-сервера

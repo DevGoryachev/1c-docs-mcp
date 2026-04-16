@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DocsRepository } from "../../db/repository.js";
 import { config } from "../../config.js";
 import type { SearchItem } from "../../types/doc.js";
+import { invalidInput } from "../errors.js";
 
 export const searchToolSchema = {
   query: z.string().min(1).describe("Поисковый запрос"),
@@ -16,8 +17,20 @@ type SearchToolArgs = {
 };
 
 export async function handleSearch(repository: DocsRepository, args: SearchToolArgs) {
+  if (!args.query || args.query.trim().length === 0) {
+    throw invalidInput("Query must be non-empty.");
+  }
   const safeTopK = Math.min(Math.max(args.top_k ?? config.defaultSearchLimit, 1), config.maxSearchLimit);
-  const rows = repository.search(args.query, args.topic, safeTopK);
+  let rows;
+  try {
+    rows = repository.search(args.query, args.topic, safeTopK);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.toLowerCase().includes("пустой")) {
+      throw invalidInput("Query must contain letters or digits.");
+    }
+    throw error;
+  }
   const items: SearchItem[] = rows.map((row) => ({
     id: row.id,
     title: row.title,

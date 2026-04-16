@@ -1,8 +1,62 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { incrementCounter, logOperation, nextRequestId, recordDuration } from "../observability.js";
+
+export const REGISTERED_PROMPT_NAMES = [
+  "review_1c_code_against_standards",
+  "design_http_service_1c",
+  "suggest_skd_approach",
+  "check_client_server_boundary",
+  "optimize_1c_query",
+  "integration_error_contract",
+  "review_1c_form_code",
+  "review_http_api_contract_1c",
+  "review_skd_design",
+  "review_query_1c",
+  "explain_1c_antipattern",
+  "design_integration_contract_1c"
+] as const;
 
 export function registerKnowledgePrompts(server: McpServer): void {
-  server.registerPrompt(
+  const registerPromptObserved = (
+    name: string,
+    metadata: {
+      title: string;
+      description: string;
+      argsSchema: Record<string, z.ZodTypeAny>;
+    },
+    builder: (args: any) => any
+  ) => {
+    server.registerPrompt(
+      name,
+      metadata,
+      (args: any) => {
+        const requestId = nextRequestId();
+        const startedAt = Date.now();
+        let status: "ok" | "error" = "ok";
+        incrementCounter("prompt_get_total");
+        try {
+          return builder(args);
+        } catch (error) {
+          status = "error";
+          throw error;
+        } finally {
+          const durationMs = Date.now() - startedAt;
+          recordDuration("prompt", name, durationMs);
+          logOperation({
+            request_id: requestId,
+            kind: "prompt",
+            name,
+            prompt_name: name,
+            status,
+            duration_ms: durationMs
+          });
+        }
+      }
+    );
+  };
+
+  registerPromptObserved(
     "review_1c_code_against_standards",
     {
       title: "Ревью кода 1С по стандартам",
@@ -12,7 +66,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         context: z.string().optional().describe("Дополнительный контекст: объект, модуль, сценарий")
       }
     },
-    ({ code, context }) => ({
+    ({ code, context }: { code: string; context?: string }) => ({
       description: "Ревью кода 1С по стандартам и базе знаний MCP",
       messages: [
         {
@@ -36,7 +90,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "design_http_service_1c",
     {
       title: "Проектирование HTTP-сервиса 1С",
@@ -48,7 +102,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         notes: z.string().optional().describe("Дополнительные ограничения или примеры")
       }
     },
-    ({ goal, endpoint, method, notes }) => ({
+    ({ goal, endpoint, method, notes }: { goal: string; endpoint: string; method: string; notes?: string }) => ({
       description: "Декларативный шаблон проектирования HTTP-сервиса 1С",
       messages: [
         {
@@ -72,7 +126,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "suggest_skd_approach",
     {
       title: "Подход к отчету через СКД",
@@ -83,7 +137,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         constraints: z.string().optional().describe("Ограничения и требования")
       }
     },
-    ({ report_goal, data_sources, constraints }) => ({
+    ({ report_goal, data_sources, constraints }: { report_goal: string; data_sources: string; constraints?: string }) => ({
       description: "Декларативный шаблон проектирования отчета на СКД",
       messages: [
         {
@@ -107,7 +161,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "check_client_server_boundary",
     {
       title: "Проверка клиент-серверной границы",
@@ -117,7 +171,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         code: z.string().optional().describe("Фрагмент кода формы")
       }
     },
-    ({ form_context, code }) => ({
+    ({ form_context, code }: { form_context: string; code?: string }) => ({
       description: "Декларативный шаблон проверки клиент-серверной границы в форме",
       messages: [
         {
@@ -140,7 +194,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "optimize_1c_query",
     {
       title: "Оптимизация запроса 1С",
@@ -150,7 +204,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         usage_context: z.string().optional().describe("Где и как выполняется запрос")
       }
     },
-    ({ query_text, usage_context }) => ({
+    ({ query_text, usage_context }: { query_text: string; usage_context?: string }) => ({
       description: "Декларативный шаблон оптимизации запроса 1С",
       messages: [
         {
@@ -173,7 +227,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "integration_error_contract",
     {
       title: "Контракт ошибок интеграции",
@@ -183,7 +237,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         current_format: z.string().optional().describe("Текущий формат ошибок (если есть)")
       }
     },
-    ({ integration_scope, current_format }) => ({
+    ({ integration_scope, current_format }: { integration_scope: string; current_format?: string }) => ({
       description: "Декларативный шаблон контракта ошибок интеграции",
       messages: [
         {
@@ -205,7 +259,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "review_1c_form_code",
     {
       title: "Ревью кода формы 1С",
@@ -215,7 +269,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         code: z.string().min(1).describe("Код формы 1С")
       }
     },
-    ({ form_context, code }) => ({
+    ({ form_context, code }: { form_context: string; code: string }) => ({
       description: "Декларативный шаблон ревью кода формы 1С",
       messages: [
         {
@@ -224,9 +278,11 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Сделай ревью кода формы 1С.",
-              "Используй sources MCP: resources `1c://docs/form_patterns`, `1c://docs/client_server_rules`, `1c://docs/client_server_antipatterns`, tools `search`, `fetch`, `list_topics`.",
-              "Проверь клиент-серверную границу, лишние серверные вызовы, повторные обращения и риск для веб-клиента.",
-              "Выдай замечания блоками: критично, желательно, стилистически.",
+              "Сначала используй MCP-источники: resources `1c://docs/client_server_rules`, `1c://docs/client_server_antipatterns`, `1c://docs/form_patterns`, `1c://docs/interface_rules` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого дай вывод по ревью формы: клиент-серверная граница, лишние серверные вызовы, перегруженный контекст формы, риск для веб-клиента.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
+              "Выдавай замечания блоками: критично, желательно, стилистически.",
               `Контекст формы: ${form_context}`,
               "Код:",
               code
@@ -237,7 +293,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "review_http_api_contract_1c",
     {
       title: "Ревью контракта HTTP API 1С",
@@ -248,7 +304,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         current_contract: z.string().optional().describe("Текущий контракт запроса/ответа")
       }
     },
-    ({ endpoint_context, code, current_contract }) => ({
+    ({ endpoint_context, code, current_contract }: { endpoint_context: string; code?: string; current_contract?: string }) => ({
       description: "Декларативный шаблон ревью HTTP API контракта 1С",
       messages: [
         {
@@ -257,8 +313,10 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Сделай ревью HTTP API на 1С.",
-              "Используй resources `1c://docs/http_api_rules`, `1c://docs/http_api_antipatterns`, `1c://docs/integration_patterns` и tools `search`, `fetch`, `list_topics`.",
-              "Проверь status codes, JSON-контракт ошибок, Content-Type, валидацию входа и разделение транспортной/бизнес-логики.",
+              "Сначала используй MCP-источники: resources `1c://docs/http_api_rules`, `1c://docs/http_api_antipatterns`, `1c://docs/integration_patterns`, `1c://docs/integration_antipatterns`, `1c://docs/json_patterns`, `1c://docs/exchange` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого дай вывод: status codes, Content-Type, JSON-контракт ошибок, валидация входа, разделение прикладных и технических ошибок.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
               `Контекст endpoint: ${endpoint_context}`,
               current_contract ? `Текущий контракт: ${current_contract}` : "",
               code ? `Код:\n${code}` : ""
@@ -271,7 +329,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "review_skd_design",
     {
       title: "Ревью архитектуры отчета СКД",
@@ -282,7 +340,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         query_text: z.string().optional().describe("Текст запроса, если есть")
       }
     },
-    ({ report_context, skd_description, query_text }) => ({
+    ({ report_context, skd_description, query_text }: { report_context: string; skd_description?: string; query_text?: string }) => ({
       description: "Декларативный шаблон ревью архитектуры СКД",
       messages: [
         {
@@ -291,8 +349,10 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Сделай ревью архитектуры отчета на СКД.",
-              "Используй resources `1c://docs/skd_core`, `1c://docs/skd_antipatterns` и tools `search`, `fetch`, `list_topics`.",
-              "Проверь параметры, ресурсы, варианты отчета, пользовательские настройки, читаемость и риски anti-patterns.",
+              "Сначала используй MCP-источники: resources `1c://docs/skd_core`, `1c://docs/skd_antipatterns`, `1c://docs/query_patterns`, `1c://docs/query_antipatterns` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого дай вывод: параметры, ресурсы, варианты отчета, пользовательские/быстрые настройки, риски anti-patterns.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
               `Контекст отчета: ${report_context}`,
               skd_description ? `Описание СКД: ${skd_description}` : "",
               query_text ? `Текст запроса:\n${query_text}` : ""
@@ -305,7 +365,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "review_query_1c",
     {
       title: "Ревью запроса 1С",
@@ -315,7 +375,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         usage_context: z.string().optional().describe("Контекст выполнения запроса")
       }
     },
-    ({ query_text, usage_context }) => ({
+    ({ query_text, usage_context }: { query_text: string; usage_context?: string }) => ({
       description: "Декларативный шаблон ревью запроса 1С",
       messages: [
         {
@@ -324,8 +384,10 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Сделай ревью запроса 1С.",
-              "Используй resources `1c://docs/query_patterns`, `1c://docs/query_antipatterns` и tools `search`, `fetch`, `list_topics`.",
-              "Проверь лишние поля, запросы в цикле, уместность временных таблиц, избыточные соединения и читаемость.",
+              "Сначала используй MCP-источники: resources `1c://docs/query_patterns`, `1c://docs/query_antipatterns`, `1c://docs/infostart_practices` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого дай вывод: лишние поля, запросы в цикле, уместность временных таблиц, читаемость и сопровождение.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
               usage_context ? `Контекст: ${usage_context}` : "",
               "Запрос:",
               query_text
@@ -338,7 +400,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "explain_1c_antipattern",
     {
       title: "Объяснение anti-pattern 1С",
@@ -348,7 +410,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         code: z.string().optional().describe("Фрагмент кода")
       }
     },
-    ({ problem_description, code }) => ({
+    ({ problem_description, code }: { problem_description: string; code?: string }) => ({
       description: "Декларативный шаблон объяснения anti-pattern 1С",
       messages: [
         {
@@ -357,8 +419,10 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Объясни анти-паттерн 1С и предложи правильную альтернативу.",
-              "Используй anti-pattern resources: `1c://docs/client_server_antipatterns`, `1c://docs/http_api_antipatterns`, `1c://docs/integration_antipatterns`, `1c://docs/exchange_antipatterns`, `1c://docs/query_antipatterns`, `1c://docs/skd_antipatterns`.",
-              "Дополнительно используй tools `search`, `fetch`, `list_topics` для точных ссылок на найденные элементы.",
+              "Сначала используй MCP-источники: resources `1c://docs/client_server_antipatterns`, `1c://docs/http_api_antipatterns`, `1c://docs/integration_antipatterns`, `1c://docs/exchange_antipatterns`, `1c://docs/query_antipatterns`, `1c://docs/skd_antipatterns` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого объясни, почему это anti-pattern и предложи корректную альтернативу.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
               `Описание проблемы: ${problem_description}`,
               code ? `Код:\n${code}` : ""
             ]
@@ -370,7 +434,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
     })
   );
 
-  server.registerPrompt(
+  registerPromptObserved(
     "design_integration_contract_1c",
     {
       title: "Проектирование интеграционного контракта 1С",
@@ -381,7 +445,7 @@ export function registerKnowledgePrompts(server: McpServer): void {
         notes: z.string().optional().describe("Дополнительные требования")
       }
     },
-    ({ integration_goal, transport_type, notes }) => ({
+    ({ integration_goal, transport_type, notes }: { integration_goal: string; transport_type: string; notes?: string }) => ({
       description: "Декларативный шаблон проектирования интеграционного контракта 1С",
       messages: [
         {
@@ -390,8 +454,10 @@ export function registerKnowledgePrompts(server: McpServer): void {
             type: "text",
             text: [
               "Спроектируй контракт интеграции между 1С и внешней системой.",
-              "Используй resources `1c://docs/integration_patterns`, `1c://docs/http_api_rules`, `1c://docs/json_patterns`, `1c://docs/exchange` и tools `search`, `fetch`, `list_topics`.",
-              "Определи request/response, модель ошибок, HTTP/транспортные статусы, границу нормализации внешнего формата и правила валидации.",
+              "Сначала используй MCP-источники: resources `1c://docs/integration_patterns`, `1c://docs/http_api_rules`, `1c://docs/json_patterns`, `1c://docs/exchange`, `1c://docs/dev_rules` и tools `search`, `fetch`, `list_topics`.",
+              "Затем обязательно перечисли использованные chunks (id, title, topic).",
+              "После этого дай проект контракта: request/response, модель ошибок, статус-коды, граница нормализации внешнего формата, правила валидации.",
+              "Если нужно, отдельным блоком добавь краткие рекомендации вне MCP и явно пометь их как outside MCP.",
               `Цель: ${integration_goal}`,
               `Транспорт: ${transport_type}`,
               notes ? `Примечания: ${notes}` : ""

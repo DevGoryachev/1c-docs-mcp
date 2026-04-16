@@ -2,11 +2,14 @@
 
 ## Назначение
 
-`resources` в `1c-docs-mcp` дают стабильный доступ к тематическим подборкам chunks по URI вида `1c://docs/<topic>`.
+`resources` в `1c-docs-mcp` дают доступ к:
+- стабильным тематическим подборкам chunks по URI `1c://docs/<topic>`;
+- meta ресурсам `1c://meta/*`;
+- динамическим ресурсам через templates.
 
 Ресурс публикуется в `resources/list` только если в корпусе есть хотя бы один документ с таким `topic`.
 
-## Контракт ресурса
+## Контракт тематического ресурса
 
 Каждый `resources/read` возвращает JSON:
 
@@ -30,9 +33,29 @@
 
 ## Ошибки
 
-Если URI ресурса неизвестен или topic отсутствует в корпусе, сервер возвращает ошибку в текущем стиле:
+Единый стиль ошибки:
 
-`Ресурс не найден: <uri>`
+```json
+{
+  "error": {
+    "type": "invalid input | not found | internal error",
+    "message": "..."
+  }
+}
+```
+
+## Meta resources
+
+- `1c://meta/server` — метаданные сервера, список tools/resources/templates.
+- `1c://meta/corpus` — сводка по корпусу (total docs/topics).
+- `1c://meta/topics` — список доступных topics и их URI.
+
+## Resource templates
+
+- `1c://docs/topic/{topic}` — динамический тематический ресурс.
+- `1c://chunks/{id}` — динамический ресурс документа по `id`.
+- `1c://playbooks/{name}` — ресурс плейбука (review/integration/skd).
+- `1c://standards/{area}` — ресурс стандартов по области (forms/api/queries/skd/general).
 
 ## Список поддерживаемых URI
 

@@ -15,7 +15,6 @@ export interface SearchResult {
   snippet: string;
   extraJson?: string;
   content?: string;
-  score?: number;
 }
 
 export interface SearchItem {

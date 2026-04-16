@@ -8,10 +8,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
+    "start:stdio": "node dist/main-stdio.js",
+    "start:http": "node dist/main-http.js",
     "dev": "tsx src/main.ts",
+    "dev:stdio": "tsx src/main-stdio.ts",
+    "dev:http": "tsx src/main-http.ts",
     "build-index": "tsx src/indexer/build-index.ts",
     "index": "tsx src/indexer/build-index.ts",
-    "smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1"
+    "smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1",
+    "regression": "tsx scripts/run-regression.ts"
   },
   "engines": {
     "node": ">=20"

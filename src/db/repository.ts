@@ -89,8 +89,7 @@ export class DocsRepository {
       title: row.title,
       snippet: createSnippet(row.content, queryTokens),
       extraJson: row.extraJson,
-      content: row.content,
-      score: row.score
+      content: row.content
     }));
   }
 
@@ -146,6 +145,12 @@ export class DocsRepository {
         priority: parseMeta(row.extraJson).priority
       }))
       .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0) || left.title.localeCompare(right.title) || left.id.localeCompare(right.id));
+  }
+
+  public listDocsCount(): number {
+    const stmt = this.db.prepare("SELECT COUNT(1) AS total FROM docs");
+    const row = stmt.get() as { total: number } | undefined;
+    return row?.total ?? 0;
   }
 }
 

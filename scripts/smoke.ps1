@@ -13,3 +13,6 @@ if (Test-Path "data/sqlite/docs.db") {
 } else {
   Write-Warning "Индекс не найден. Выполните: npm run index"
 }
+
+Write-Host "4) Regression queries"
+npm run regression
