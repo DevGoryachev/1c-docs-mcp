@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type OutgoingHttpHeader, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -18,6 +18,8 @@ import { handleRunRegressionQueries, runRegressionQueriesToolSchema } from "./to
 import { handleSearch, searchToolSchema } from "./tools/search.js";
 import { handleValidateChunkSchema, validateChunkSchemaToolSchema } from "./tools/validate-chunk-schema.js";
 
+const processStartedAtMs = Date.now();
+
 type McpRuntime = {
   server: McpServer;
   repository: DocsRepository;
@@ -28,6 +30,18 @@ type HttpSession = {
   transport: StreamableHTTPServerTransport;
   runtime: McpRuntime;
 };
+
+class HttpRequestError extends Error {
+  public readonly statusCode: number;
+  public readonly payload: Record<string, unknown>;
+
+  public constructor(statusCode: number, payload: Record<string, unknown>) {
+    super(typeof payload.error === "object" ? String((payload.error as { message?: string }).message ?? "HTTP request error") : "HTTP request error");
+    this.statusCode = statusCode;
+    this.payload = payload;
+    this.name = "HttpRequestError";
+  }
+}
 
 export async function startMcpServer(): Promise<void> {
   await startMcpServerStdio();
@@ -55,9 +69,47 @@ export async function startMcpServerStdio(): Promise<void> {
 export async function startMcpServerHttp(): Promise<void> {
   const endpoint = normalizeHttpEndpoint(config.httpEndpoint);
   const sessions = new Map<string, HttpSession>();
+  let isReady = false;
+  let isShuttingDown = false;
+  let shutdownStartedAt = 0;
+  let shutdownPromise: Promise<void> | null = null;
 
   const server = createServer(async (req, res) => {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (requestUrl.pathname === "/health" && req.method === "GET") {
+      writeJson(res, 200, {
+        ok: true,
+        name: config.serverName,
+        version: config.serverVersion,
+        transport: "http_streamable",
+        auth_http_enabled: config.httpAuthEnabled,
+        uptime_sec: Number(((Date.now() - processStartedAtMs) / 1000).toFixed(3))
+      });
+      return;
+    }
+
+    if (requestUrl.pathname === "/ready" && req.method === "GET") {
+      const payload = {
+        ready: isReady && !isShuttingDown,
+        name: config.serverName,
+        version: config.serverVersion,
+        transport: "http_streamable"
+      };
+      writeJson(res, payload.ready ? 200 : 503, payload);
+      return;
+    }
+
+    if (isShuttingDown) {
+      writeJson(res, 503, {
+        error: {
+          type: "unavailable",
+          message: "Server is shutting down"
+        }
+      });
+      return;
+    }
+
     if (requestUrl.pathname !== endpoint) {
       writeJson(res, 404, {
         jsonrpc: "2.0",
@@ -82,29 +134,38 @@ export async function startMcpServerHttp(): Promise<void> {
       return;
     }
 
-    if (!isHttpRequestAuthorized(req)) {
-      writeJson(res, 401, {
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Unauthorized"
-        },
-        id: null
-      });
-      return;
-    }
-
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Methods": "POST,GET,DELETE,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type,Accept,MCP-Session-Id,Last-Event-ID",
+        "Access-Control-Allow-Headers": "Authorization,Content-Type,Accept,MCP-Session-Id,Last-Event-ID",
         "Access-Control-Allow-Origin": req.headers.origin ?? "null"
       });
       res.end();
       return;
     }
 
+    if (!isHttpRequestAuthorized(req)) {
+      writeUnauthorized(res);
+      const requestId = nextRequestId();
+      incrementCounter("auth_fail_total");
+      recordDuration("http", "auth_bearer", 0);
+      logOperation({
+        request_id: requestId,
+        kind: "http",
+        name: "auth_bearer",
+        uri: requestUrl.pathname,
+        status: "error",
+        duration_ms: 0
+      });
+      return;
+    }
+
     if (req.method === "POST") {
+      const contentLengthError = getContentLengthLimitError(req, config.httpMaxBodyBytes);
+      if (contentLengthError) {
+        writeJson(res, contentLengthError.statusCode, contentLengthError.payload);
+        return;
+      }
       await handleHttpPost(req, res, sessions);
       return;
     }
@@ -128,6 +189,7 @@ export async function startMcpServerHttp(): Promise<void> {
     server.once("error", reject);
     server.listen(config.httpPort, config.httpHost, () => {
       server.off("error", reject);
+      isReady = true;
       process.stderr.write(
         `MCP HTTP transport listening on http://${config.httpHost}:${config.httpPort}${endpoint}\n`
       );
@@ -135,20 +197,62 @@ export async function startMcpServerHttp(): Promise<void> {
     });
   });
 
-  const shutdown = async () => {
-    await new Promise<void>((resolve) => {
-      server.close(() => resolve());
+  const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
+    if (shutdownPromise) {
+      await shutdownPromise;
+      return;
+    }
+
+    const requestId = nextRequestId();
+    shutdownStartedAt = Date.now();
+    isShuttingDown = true;
+    isReady = false;
+    logOperation({
+      request_id: requestId,
+      kind: "http",
+      name: "shutdown_start",
+      status: "ok",
+      duration_ms: 0,
+      uri: signal
     });
-    const closeOps = Array.from(sessions.values()).map((session) => closeHttpSession(session));
-    await Promise.allSettled(closeOps);
-    process.exit(0);
+
+    shutdownPromise = (async () => {
+      try {
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+        const closeOps = Array.from(sessions.values()).map((session) => closeHttpSession(session));
+        await Promise.allSettled(closeOps);
+        logOperation({
+          request_id: requestId,
+          kind: "http",
+          name: "shutdown_complete",
+          status: "ok",
+          duration_ms: Date.now() - shutdownStartedAt,
+          uri: signal
+        });
+        process.exit(0);
+      } catch {
+        logOperation({
+          request_id: requestId,
+          kind: "http",
+          name: "shutdown_complete",
+          status: "error",
+          duration_ms: Date.now() - shutdownStartedAt,
+          uri: signal
+        });
+        process.exit(1);
+      }
+    })();
+
+    await shutdownPromise;
   };
 
   process.on("SIGINT", () => {
-    void shutdown();
+    void shutdown("SIGINT");
   });
   process.on("SIGTERM", () => {
-    void shutdown();
+    void shutdown("SIGTERM");
   });
 }
 
@@ -221,11 +325,12 @@ async function handleHttpPost(
 ): Promise<void> {
   let createdSessionId: string | undefined;
   try {
-    const parsedBody = await readJsonBody(req);
+    const parsedBody = await readJsonBody(req, config.httpMaxBodyBytes);
     const sessionId = getMcpSessionId(req);
     const existing = sessionId ? sessions.get(sessionId) : undefined;
     if (existing) {
-      await existing.transport.handleRequest(req, res, parsedBody);
+      ensureSseUtf8Charset(res);
+      await withRequestTimeout(existing.transport.handleRequest(req, res, parsedBody), config.httpRequestTimeoutMs);
       return;
     }
 
@@ -261,7 +366,8 @@ async function handleHttpPost(
     });
     sessions.set(newSessionId, { transport, runtime });
     await runtime.server.connect(transport);
-    await transport.handleRequest(req, res, parsedBody);
+    ensureSseUtf8Charset(res);
+    await withRequestTimeout(transport.handleRequest(req, res, parsedBody), config.httpRequestTimeoutMs);
     return;
   } catch (error) {
     if (createdSessionId) {
@@ -270,6 +376,10 @@ async function handleHttpPost(
         sessions.delete(createdSessionId);
         await closeHttpSession(created);
       }
+    }
+    if (error instanceof HttpRequestError) {
+      writeJson(res, error.statusCode, error.payload);
+      return;
     }
     writeInternalError(res, error);
   }
@@ -307,26 +417,112 @@ async function handleHttpStreamRequest(
       return;
     }
 
-    await session.transport.handleRequest(req, res);
+    if (req.method === "GET") {
+      ensureSseUtf8Charset(res);
+      await session.transport.handleRequest(req, res);
+    } else {
+      ensureSseUtf8Charset(res);
+      await withRequestTimeout(session.transport.handleRequest(req, res), config.httpRequestTimeoutMs);
+    }
     if (req.method === "DELETE") {
       sessions.delete(sessionId);
       await closeHttpSession(session);
     }
   } catch (error) {
+    if (error instanceof HttpRequestError) {
+      writeJson(res, error.statusCode, error.payload);
+      return;
+    }
     writeInternalError(res, error);
   }
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+function ensureSseUtf8Charset(res: ServerResponse): void {
+  const patchedFlag = "__mcpSseCharsetPatched";
+  const patched = res as ServerResponse & { [patchedFlag]?: boolean };
+  if (patched[patchedFlag]) {
+    return;
+  }
+  patched[patchedFlag] = true;
+
+  const originalSetHeader = res.setHeader.bind(res);
+  const originalWriteHead = res.writeHead.bind(res);
+
+  const normalizeHeaderValue = <T>(name: string, value: T): T => {
+    if (name.toLowerCase() !== "content-type" || typeof value !== "string") {
+      return value;
+    }
+    const lower = value.toLowerCase();
+    if (lower.startsWith("text/event-stream") && !lower.includes("charset=")) {
+      return `${value}; charset=utf-8` as T;
+    }
+    return value;
+  };
+
+  const patchedSetHeader: typeof res.setHeader = (name, value) => {
+    return originalSetHeader(name, normalizeHeaderValue(name, value));
+  };
+  res.setHeader = patchedSetHeader;
+
+  const normalizeHeadersObject = (headers: OutgoingHttpHeaders): OutgoingHttpHeaders => {
+    const normalized: OutgoingHttpHeaders = { ...headers };
+    for (const [key, value] of Object.entries(normalized)) {
+      if (value !== undefined) {
+        normalized[key] = normalizeHeaderValue(key, value);
+      }
+    }
+    return normalized;
+  };
+
+  const patchedWriteHead = (
+    statusCode: number,
+    statusMessageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[],
+    headers?: OutgoingHttpHeaders | OutgoingHttpHeader[]
+  ): ServerResponse => {
+    if (typeof statusMessageOrHeaders === "string") {
+      if (headers && !Array.isArray(headers)) {
+        return originalWriteHead(statusCode, statusMessageOrHeaders, normalizeHeadersObject(headers));
+      }
+      return originalWriteHead(statusCode, statusMessageOrHeaders, headers);
+    }
+    if (statusMessageOrHeaders && !Array.isArray(statusMessageOrHeaders)) {
+      return originalWriteHead(statusCode, normalizeHeadersObject(statusMessageOrHeaders));
+    }
+    return originalWriteHead(statusCode, statusMessageOrHeaders);
+  };
+  res.writeHead = patchedWriteHead as typeof res.writeHead;
+}
+
+async function readJsonBody(req: IncomingMessage, maxBodyBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalBytes += buffer.byteLength;
+    if (totalBytes > maxBodyBytes) {
+      throw new HttpRequestError(413, {
+        error: {
+          type: "invalid_input",
+          message: `Request body too large. Max ${maxBodyBytes} bytes.`
+        }
+      });
+    }
+    chunks.push(buffer);
   }
   const raw = Buffer.concat(chunks).toString("utf-8").trim();
   if (raw.length === 0) {
     return {};
   }
-  return JSON.parse(raw) as unknown;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new HttpRequestError(400, {
+      error: {
+        type: "invalid_input",
+        message: "Invalid JSON body."
+      }
+    });
+  }
 }
 
 function normalizeHttpEndpoint(endpoint: string): string {
@@ -354,6 +550,11 @@ function isOriginAllowed(originHeader: string | undefined, allowedHost: string):
     return true;
   }
 
+  const allowlist = config.httpAllowedOrigins.map((item) => item.toLowerCase());
+  if (allowlist.length > 0) {
+    return allowlist.includes(originHeader.trim().toLowerCase());
+  }
+
   try {
     const parsed = new URL(originHeader);
     const host = parsed.hostname.toLowerCase();
@@ -367,9 +568,95 @@ function isOriginAllowed(originHeader: string | undefined, allowedHost: string):
   }
 }
 
-function isHttpRequestAuthorized(_req: IncomingMessage): boolean {
-  // Placeholder for future bearer auth integration.
-  return true;
+function getContentLengthLimitError(req: IncomingMessage, maxBodyBytes: number): HttpRequestError | null {
+  const rawContentLength = req.headers["content-length"];
+  const value = Array.isArray(rawContentLength) ? rawContentLength[0] : rawContentLength;
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed > maxBodyBytes) {
+    return new HttpRequestError(413, {
+      error: {
+        type: "invalid_input",
+        message: `Request body too large. Max ${maxBodyBytes} bytes.`
+      }
+    });
+  }
+  return null;
+}
+
+async function withRequestTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (timeoutMs <= 0) {
+    return promise;
+  }
+
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new HttpRequestError(408, {
+          error: {
+            type: "internal_error",
+            message: "Request timeout."
+          }
+        }));
+      }, timeoutMs);
+    });
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function isHttpRequestAuthorized(req: IncomingMessage): boolean {
+  if (!config.httpAuthEnabled) {
+    return true;
+  }
+
+  const expectedToken = config.httpBearerToken;
+  if (expectedToken.trim().length === 0) {
+    return false;
+  }
+
+  const rawAuth = req.headers.authorization;
+  if (!rawAuth) {
+    return false;
+  }
+  const authHeader = Array.isArray(rawAuth) ? (rawAuth[0] ?? "") : rawAuth;
+  const [scheme, token, ...rest] = authHeader.trim().split(/\s+/);
+  if (rest.length > 0) {
+    return false;
+  }
+  if (!scheme || scheme.toLowerCase() !== "bearer" || !token) {
+    return false;
+  }
+
+  const expectedBytes = Buffer.from(expectedToken, "utf-8");
+  const actualBytes = Buffer.from(token, "utf-8");
+  if (expectedBytes.length !== actualBytes.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBytes, actualBytes);
+}
+
+function writeUnauthorized(res: ServerResponse): void {
+  if (res.headersSent) {
+    return;
+  }
+  res.writeHead(401, {
+    "Content-Type": "application/json; charset=utf-8",
+    "WWW-Authenticate": "Bearer"
+  });
+  res.end(JSON.stringify({
+    error: {
+      type: "unauthorized",
+      message: "Unauthorized"
+    }
+  }));
 }
 
 function writeJson(res: ServerResponse, statusCode: number, payload: unknown): void {

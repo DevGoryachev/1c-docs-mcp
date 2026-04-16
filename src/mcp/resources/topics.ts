@@ -158,6 +158,9 @@ export function registerTopicResources(server: McpServer, repository: DocsReposi
           name: config.serverName,
           version: config.serverVersion,
           transports: [...config.supportedTransports],
+          supported_transports: [...config.supportedTransports],
+          auth_http_enabled: config.httpAuthEnabled,
+          public_base_url: config.publicBaseUrl,
           capabilities: {
             tools: true,
             resources: true,

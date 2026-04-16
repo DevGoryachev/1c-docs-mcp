@@ -129,6 +129,155 @@ npm run start:http
 - `MCP_HTTP_HOST` — host для HTTP transport (по умолчанию `127.0.0.1`).
 - `MCP_HTTP_PORT` — port для HTTP transport (по умолчанию `3000`).
 - `MCP_HTTP_ENDPOINT` — MCP endpoint для HTTP transport (по умолчанию `/mcp`).
+- `MCP_HTTP_AUTH_ENABLED` — включить bearer auth для HTTP transport (`true|false`, по умолчанию `false`).
+- `MCP_HTTP_BEARER_TOKEN` — bearer token для HTTP transport (обязателен, если `MCP_HTTP_AUTH_ENABLED=true`).
+- `MCP_PUBLIC_BASE_URL` — публичный base URL для shared/internal подключения (например `http://192.168.1.10:3000`).
+- `MCP_HTTP_ALLOWED_ORIGINS` — CSV-список разрешенных `Origin` (например `http://localhost,http://127.0.0.1`).
+- `MCP_HTTP_MAX_BODY_BYTES` — лимит тела HTTP-запроса для `/mcp` в байтах.
+- `MCP_HTTP_REQUEST_TIMEOUT_MS` — базовый timeout HTTP-запроса для `/mcp` (POST/DELETE).
+
+## Host Strategy
+
+- `MCP_HTTP_HOST=127.0.0.1` (default): только локальный доступ (localhost-only).
+- `MCP_HTTP_HOST=0.0.0.0` или внутренний IP/hostname: shared internal endpoint для команды.
+
+Для shared режима рекомендуется:
+- включить bearer auth;
+- явно настроить `MCP_HTTP_ALLOWED_ORIGINS`;
+- задать `MCP_PUBLIC_BASE_URL`.
+
+## HTTP Bearer Auth
+
+Auth применяется только к HTTP transport. `stdio` режим работает как раньше, без auth.
+
+Пример env:
+
+```bash
+MCP_HTTP_AUTH_ENABLED=true
+MCP_HTTP_BEARER_TOKEN=dev-secret-token
+```
+
+Пример HTTP запроса:
+
+```bash
+curl -X POST "http://127.0.0.1:3000/mcp" \
+  -H "Authorization: Bearer dev-secret-token" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"example","version":"1.0.0"}}}'
+```
+
+## Origin Policy
+
+- Если `MCP_HTTP_ALLOWED_ORIGINS` задан, разрешаются только значения из allowlist.
+- Если allowlist не задан, действует безопасный fallback для localhost-сценария.
+- Запросы без `Origin` (типично для non-browser MCP clients) разрешаются.
+
+## Health Endpoint
+
+Для HTTP режима доступен healthcheck:
+
+- `GET /health`
+- `GET /ready`
+
+`/health` показывает, что процесс жив.
+
+`/ready` показывает готовность принимать рабочие запросы:
+- `200`, если сервер готов и не находится в shutdown;
+- `503`, если сервер не готов или уже начал graceful shutdown.
+
+Пример `/health`:
+
+```json
+{
+  "ok": true,
+  "name": "1c-docs-mcp",
+  "version": "0.1.0",
+  "transport": "http_streamable",
+  "auth_http_enabled": true,
+  "uptime_sec": 12.345
+}
+```
+
+Пример `/ready`:
+
+```json
+{
+  "ready": true,
+  "name": "1c-docs-mcp",
+  "version": "0.1.0",
+  "transport": "http_streamable"
+}
+```
+
+`/health` и `/ready` не требуют MCP session id.
+
+## HTTP Request Hardening
+
+- `/mcp` POST ограничен по размеру тела (`MCP_HTTP_MAX_BODY_BYTES`).
+- При превышении лимита сервер возвращает `413` с structured error.
+- Для `/mcp` POST/DELETE применяется timeout (`MCP_HTTP_REQUEST_TIMEOUT_MS`), при превышении возвращается `408`.
+
+## Graceful Shutdown
+
+В HTTP режиме обрабатываются сигналы `SIGTERM` и `SIGINT`:
+- сервер прекращает принимать новые HTTP запросы;
+- закрывает HTTP listener и активные MCP сессии;
+- пишет structured logs о старте и завершении shutdown;
+- завершает процесс корректно.
+
+## Docker
+
+Сборка образа:
+
+```bash
+docker build -t 1c-docs-mcp:latest .
+```
+
+Запуск контейнера (HTTP режим):
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e MCP_HTTP_HOST=0.0.0.0 \
+  -e MCP_HTTP_PORT=3000 \
+  -e MCP_HTTP_ENDPOINT=/mcp \
+  -e MCP_HTTP_AUTH_ENABLED=true \
+  -e MCP_HTTP_BEARER_TOKEN=dev-secret-token \
+  1c-docs-mcp:latest
+```
+
+В Docker образ добавлен `HEALTHCHECK`, который проверяет `GET /ready`.
+
+## Team Shared HTTP Mode
+
+Пример env для внутреннего shared режима:
+
+```bash
+MCP_HTTP_HOST=0.0.0.0
+MCP_HTTP_PORT=3000
+MCP_HTTP_ENDPOINT=/mcp
+MCP_PUBLIC_BASE_URL=http://192.168.1.10:3000
+MCP_HTTP_AUTH_ENABLED=true
+MCP_HTTP_BEARER_TOKEN=team-internal-token
+MCP_HTTP_ALLOWED_ORIGINS=http://localhost,http://127.0.0.1,http://mcp-client.local
+MCP_HTTP_MAX_BODY_BYTES=1048576
+MCP_HTTP_REQUEST_TIMEOUT_MS=15000
+```
+
+Пример remote MCP endpoint для другого разработчика:
+
+```text
+URL: http://192.168.1.10:3000/mcp
+Authorization: Bearer team-internal-token
+Accept: application/json, text/event-stream
+Content-Type: application/json
+```
+
+Базовая последовательность проверки:
+
+1. `initialize` (POST `/mcp` с Bearer token).
+2. взять `mcp-session-id` из ответа.
+3. `tools/list` (POST `/mcp` с Bearer token и `mcp-session-id`).
 
 ## Контракты инструментов v1
 

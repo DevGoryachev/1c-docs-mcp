@@ -1,4 +1,4 @@
-export type OperationKind = "tool" | "resource" | "template" | "prompt";
+export type OperationKind = "tool" | "resource" | "template" | "prompt" | "http";
 export type OperationStatus = "ok" | "error";
 
 type CounterKey =
@@ -9,7 +9,8 @@ type CounterKey =
   | "resource_read_total"
   | "template_read_total"
   | "prompt_get_total"
-  | "tool_calls_total";
+  | "tool_calls_total"
+  | "auth_fail_total";
 
 type DurationBucket = {
   total_ms: number;
@@ -33,7 +34,8 @@ const metricsState: MetricsStateInternal = {
     resource_read_total: 0,
     template_read_total: 0,
     prompt_get_total: 0,
-    tool_calls_total: 0
+    tool_calls_total: 0,
+    auth_fail_total: 0
   },
   durations: {},
   search_topics: {},
@@ -83,7 +85,8 @@ export function getMetricsSnapshot() {
     tool: { total: 0, count: 0 },
     resource: { total: 0, count: 0 },
     template: { total: 0, count: 0 },
-    prompt: { total: 0, count: 0 }
+    prompt: { total: 0, count: 0 },
+    http: { total: 0, count: 0 }
   };
 
   for (const [key, bucket] of Object.entries(metricsState.durations)) {
@@ -100,7 +103,8 @@ export function getMetricsSnapshot() {
     tool: kindDuration.tool.count > 0 ? Number((kindDuration.tool.total / kindDuration.tool.count).toFixed(3)) : 0,
     resource: kindDuration.resource.count > 0 ? Number((kindDuration.resource.total / kindDuration.resource.count).toFixed(3)) : 0,
     template: kindDuration.template.count > 0 ? Number((kindDuration.template.total / kindDuration.template.count).toFixed(3)) : 0,
-    prompt: kindDuration.prompt.count > 0 ? Number((kindDuration.prompt.total / kindDuration.prompt.count).toFixed(3)) : 0
+    prompt: kindDuration.prompt.count > 0 ? Number((kindDuration.prompt.total / kindDuration.prompt.count).toFixed(3)) : 0,
+    http: kindDuration.http.count > 0 ? Number((kindDuration.http.total / kindDuration.http.count).toFixed(3)) : 0
   };
 
   const top_topics = Object.entries(metricsState.search_topics)
