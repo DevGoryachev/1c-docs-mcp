@@ -1,0 +1,35 @@
+{
+  "name": "1c-docs-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Локальный MCP-сервер документации 1С",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:stdio": "node dist/main-stdio.js",
+    "start:http": "node dist/main-http.js",
+    "dev": "tsx src/main.ts",
+    "dev:stdio": "tsx src/main-stdio.ts",
+    "dev:http": "tsx src/main-http.ts",
+    "build-index": "tsx src/indexer/build-index.ts",
+    "index": "tsx src/indexer/build-index.ts",
+    "smoke": "powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1",
+    "regression": "tsx scripts/run-regression.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "better-sqlite3": "^11.8.1",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.15.2",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

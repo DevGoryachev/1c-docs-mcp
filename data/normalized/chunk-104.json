@@ -1,0 +1,14 @@
+{
+  "id": "integration_antipatterns.no_error_model.104",
+  "title": "Анти-паттерн: не различать прикладные и технические ошибки интеграции",
+  "source": "Internal normalized rule based on integration practices",
+  "topic": "integration_antipatterns",
+  "tags": [
+    "integration",
+    "errors",
+    "contract",
+    "antipattern"
+  ],
+  "text": "Когда ошибки валидации, ошибки доступа, отсутствие объекта и внутренние сбои сваливаются в одно поле с общим текстом, клиент не может корректно реагировать на них. Нужна явная модель ошибок, иначе повторные отправки, карантин и пользовательские сообщения становятся хаотичными.",
+  "priority": 1
+}

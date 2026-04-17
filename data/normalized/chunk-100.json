@@ -1,0 +1,14 @@
+{
+  "id": "http_api_antipatterns.always_200.100",
+  "title": "Анти-паттерн: возвращать 200 OK для всех сценариев, включая ошибки",
+  "source": "Internal normalized rule based on integration practices",
+  "topic": "http_api_antipatterns",
+  "tags": [
+    "http",
+    "status_code",
+    "errors",
+    "antipattern"
+  ],
+  "text": "Если сервис всегда отвечает 200 OK, а факт ошибки прячется только в JSON, внешний клиент теряет надежный признак неуспеха. Это ломает повторные попытки, мониторинг, маршрутизацию ошибок и делает контракт HTTP-сервиса нестрогим.",
+  "priority": 1
+}
